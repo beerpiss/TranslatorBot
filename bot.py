@@ -1,3 +1,4 @@
+import re
 from typing import Optional
 
 import discord
@@ -29,6 +30,7 @@ class TranslatorBot(Bot):
             await self.tree.sync(guild=guild)
 
 
+DISCORD_SYNTAX_REGEX = re.compile(r"<((@!?&?\d+)|(a?:.+?:\d+))>")
 cfg = dotenv_values(".env")
 
 intents = discord.Intents.default()
@@ -94,11 +96,12 @@ async def on_message(message: Message):
     ):
         return
 
+    sanitized_message = DISCORD_SYNTAX_REGEX.sub("", message.content)
     doc = nlp(message.content)
     detected_lang = doc._.language["language"]
     if detected_lang != "en":
-        translated = translator.translate(message.content, dest="en")
-        if translated.text.lower() != message.content.lower() and translated.src != translated.dest:
+        translated = translator.translate(sanitized_message, dest="en")
+        if translated.text.lower() != sanitized_message.lower() and translated.src != translated.dest:
             await message.reply(
                 embed=create_translate_embed(translated, message=message),
                 mention_author=False,
