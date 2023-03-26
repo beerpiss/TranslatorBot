@@ -97,7 +97,7 @@ async def on_message(message: Message):
     detected_lang = doc._.language["language"]
     if detected_lang != "en":
         translated = translator.translate(message.content, dest="en")
-        if translated.text != message.content:
+        if translated.text.lower() != message.content.lower():
             await message.reply(
                 embed=create_translate_embed(translated, message=message),
                 mention_author=False,
