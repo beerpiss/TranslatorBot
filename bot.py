@@ -124,7 +124,7 @@ async def on_message(message: Message):
 async def translate(
     interaction: Interaction, text: str, to: str, from_lang: str = "auto"
 ):
-    translated = translator.translate(text, dest=to)
+    translated = translator.translate(text, dest=to, src=from_lang)
     await interaction.response.send_message(
         embed=create_translate_embed(translated, interaction=interaction)
     )
