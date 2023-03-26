@@ -1,6 +1,7 @@
 from typing import Optional
 
 import discord
+import langcodes
 import spacy
 from discord import app_commands, Message, Interaction
 from discord.ext.commands import Bot
@@ -72,7 +73,7 @@ def create_translate_embed(
             description=translated.text,
             color=color,
         )
-        .set_footer(text=f"Translated from {translated.src}")
+        .set_footer(text=f"Translated from {langcodes.Language.get(translated.src).language_name()}")
         .set_author(
             name=name,
             url=url,
