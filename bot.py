@@ -30,7 +30,7 @@ class TranslatorBot(Bot):
             await self.tree.sync(guild=guild)
 
 
-DISCORD_SYNTAX_REGEX = re.compile(r"<((@!?&?\d+)|(a?:.+?:\d+))>")
+DISCORD_SYNTAX_REGEX = re.compile(r"<(a?:.+?:(\d+))>")
 cfg = dotenv_values(".env")
 
 intents = discord.Intents.default()
@@ -96,12 +96,16 @@ async def on_message(message: Message):
     ):
         return
 
-    sanitized_message = DISCORD_SYNTAX_REGEX.sub("", message.content)
+    emotes = DISCORD_SYNTAX_REGEX.findall(message.content)
+    sanitized_message = DISCORD_SYNTAX_REGEX.sub(r"<\2>", message.content)
     doc = nlp(message.content)
     detected_lang = doc._.language["language"]
     if detected_lang != "en":
         translated = translator.translate(sanitized_message, dest="en")
         if translated.text.lower() != sanitized_message.lower() and translated.src != translated.dest:
+            for emote in emotes:
+                translated.text = translated.text.replace(f"<{emote[1]}>", f"<{emote[0]}>")
+            print(translated.text)
             await message.reply(
                 embed=create_translate_embed(translated, message=message),
                 mention_author=False,
