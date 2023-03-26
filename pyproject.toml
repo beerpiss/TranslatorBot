@@ -1,0 +1,19 @@
+[tool.poetry]
+name = "translatorbot"
+version = "0.1.0"
+description = ""
+authors = ["beerpiss <lacvtg.a1.2023@gmail.com>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.11"
+spacy = "^3.5.1"
+spacy-langdetect = "^0.1.2"
+discord-py = "^2.2.2"
+googletrans = "3.1.0a0"
+python-dotenv = "^1.0.0"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
