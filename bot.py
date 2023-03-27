@@ -3,13 +3,12 @@ from typing import Optional
 
 import discord
 import langcodes
-import spacy
-import spacy_fastlang
 from discord import app_commands, Message, Interaction
 from discord.ext.commands import Bot
 from dotenv import dotenv_values
 from googletrans import Translator
 from googletrans.models import Translated
+from lingua import Language, LanguageDetectorBuilder
 
 
 class TranslatorBot(Bot):
@@ -35,8 +34,8 @@ client = TranslatorBot(
     intents=intents,
     testing_guild_id=int(cfg["GUILD_ID"]) if cfg["GUILD_ID"] else None,
 )
-nlp = spacy.load("en_core_web_sm")
-nlp.add_pipe("language_detector", last=True)
+languages = [Language.ENGLISH, Language.CHINESE, Language.VIETNAMESE, Language.MALAY, Language.TAGALOG, Language.FRENCH, Language.SPANISH, Language.INDONESIAN, Language.JAPANESE]
+detector = LanguageDetectorBuilder.from_languages(*languages).build()
 translator = Translator()
 
 def create_translate_embed(
@@ -91,10 +90,12 @@ async def on_message(message: Message):
 
     emotes = DISCORD_SYNTAX_REGEX.findall(message.content)
     sanitized_message = DISCORD_SYNTAX_REGEX.sub(r"<\2>", message.content)
-    doc = nlp(message.content)
-    detected_lang = doc._.language
-    confidence = doc._.language_score
-    if detected_lang != "en" and confidence >= 0.8:
+
+    language = detector.detect_language_of(sanitized_message)
+    if language is None:
+        return
+    confidence = detector.compute_language_confidence(sanitized_message, language)
+    if language != Language.ENGLISH and confidence >= 0.7:
         translated = translator.translate(sanitized_message, dest="en")
         if translated.text.lower() != sanitized_message.lower() and translated.src != translated.dest:
             for emote in emotes:
