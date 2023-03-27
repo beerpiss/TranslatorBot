@@ -35,7 +35,7 @@ client = TranslatorBot(
     intents=intents,
     testing_guild_id=int(cfg["GUILD_ID"]) if cfg["GUILD_ID"] else None,
 )
-nlp = spacy.blank("xx")
+nlp = spacy.load("en_core_web_sm")
 nlp.add_pipe("language_detector", last=True)
 translator = Translator()
 
