@@ -4,18 +4,12 @@ from typing import Optional
 import discord
 import langcodes
 import spacy
+import spacy_fastlang
 from discord import app_commands, Message, Interaction
 from discord.ext.commands import Bot
 from dotenv import dotenv_values
 from googletrans import Translator
 from googletrans.models import Translated
-from spacy.language import Language
-from spacy_fastlang import LanguageDetector
-
-
-@Language.factory("language_detector")
-def create_language_detector(nlp, name):
-    return LanguageDetector()
 
 
 class TranslatorBot(Bot):
@@ -44,7 +38,6 @@ client = TranslatorBot(
 nlp = spacy.blank("xx")
 nlp.add_pipe("language_detector", last=True)
 translator = Translator()
-
 
 def create_translate_embed(
     translated: Translated,
