@@ -10,7 +10,7 @@ from dotenv import dotenv_values
 from googletrans import Translator
 from googletrans.models import Translated
 from spacy.language import Language
-from spacy_langdetect import LanguageDetector
+from spacy_fastlang import LanguageDetector
 
 
 @Language.factory("language_detector")
@@ -41,8 +41,8 @@ client = TranslatorBot(
     intents=intents,
     testing_guild_id=int(cfg["GUILD_ID"]) if cfg["GUILD_ID"] else None,
 )
-nlp = spacy.load("en_core_web_sm")
-nlp.add_pipe("language_detector")
+nlp = spacy.blank("xx")
+nlp.add_pipe("language_detector", last=True)
 translator = Translator()
 
 
@@ -99,8 +99,9 @@ async def on_message(message: Message):
     emotes = DISCORD_SYNTAX_REGEX.findall(message.content)
     sanitized_message = DISCORD_SYNTAX_REGEX.sub(r"<\2>", message.content)
     doc = nlp(message.content)
-    detected_lang = doc._.language["language"]
-    if detected_lang != "en":
+    detected_lang = doc._.language
+    confidence = doc._.language_score
+    if detected_lang != "en" and confidence >= 0.8:
         translated = translator.translate(sanitized_message, dest="en")
         if translated.text.lower() != sanitized_message.lower() and translated.src != translated.dest:
             for emote in emotes:
