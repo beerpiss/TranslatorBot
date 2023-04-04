@@ -34,23 +34,16 @@ async def zip_folder(drive: GoogleDrive, id: str, parent_folder: str) -> tuple[i
 class DriveSelectionView(discord.ui.View):
     def __init__(self, interaction: Interaction, drive: GoogleDrive, options: list[tuple[str, str]]):
         super().__init__(timeout=120)
-        self.latest_interaction = interaction
+        self.interaction = interaction
         self.drive = drive
         self.mapping = {x[1]: x[0] for x in options}
         self.dropdown.options = [discord.SelectOption(label=x[0], value=x[1]) for x in options]
-
-    async def interaction_check(self, interaction: Interaction):
-        result = await super().interaction_check(interaction)  # or your own condition
-        self.latest_interaction = interaction
-        if not result:
-            await interaction.response.defer()
-        return result
 
     async def on_timeout(self) -> None:
         for child in self.children:
             if hasattr(child, "disabled"):
                 child.disabled = True  # type: ignore
-        await self.latest_interaction.edit_original_response(view=self)
+        await self.interaction.edit_original_response(view=self)
     
     @discord.ui.select(placeholder="Select a song...")
     async def dropdown(self, interaction: Interaction, select: discord.ui.Select):
