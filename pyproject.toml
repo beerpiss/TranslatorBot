@@ -6,7 +6,7 @@ authors = ["beerpiss <lacvtg.a1.2023@gmail.com>"]
 readme = "README.md"
 
 [tool.poetry.dependencies]
-python = "^3.9"
+python = "^3.10"
 discord-py = "^2.2.2"
 googletrans = "3.1.0a0"
 python-dotenv = "^1.0.0"
