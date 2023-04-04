@@ -1,9 +1,10 @@
 from typing import Optional
 
 import discord
+import discord.ui
 import io
 import zipfile
-from discord import app_commands, Interaction, Role
+from discord import app_commands, Interaction
 from discord.ext import commands
 from oauth2client.service_account import ServiceAccountCredentials  # type: ignore
 from pydrive2.auth import GoogleAuth  # type: ignore
@@ -11,6 +12,60 @@ from pydrive2.drive import GoogleDrive  # type: ignore
 
 from bot import TranslatorBot
 
+
+async def zip_folder(drive: GoogleDrive, id: str, parent_folder: str) -> tuple[io.BytesIO, bool]:
+    files = drive.ListFile({
+        "q": f"'{id}' in parents"
+    }).GetList()
+
+    has_pv: bool = False
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        for file in files:
+            if "pv" in file["title"]:
+                has_pv = True
+                continue
+            z.writestr(f"{parent_folder}/{file['title']}", file.GetContentIOBuffer().read())
+    
+    buf.seek(0)
+    return buf, has_pv
+
+
+class DriveSelectionView(discord.ui.View):
+    def __init__(self, interaction: Interaction, drive: GoogleDrive, options: list[tuple[str, str]]):
+        super().__init__(timeout=120)
+        self.latest_interaction = interaction
+        self.drive = drive
+        self.mapping = {x[1]: x[0] for x in options}
+        self.dropdown.options = [discord.SelectOption(label=x[0], value=x[1]) for x in options]
+
+    async def interaction_check(self, interaction: Interaction):
+        result = await super().interaction_check(interaction)  # or your own condition
+        self.latest_interaction = interaction
+        if not result:
+            await interaction.response.defer()
+        return result
+
+    async def on_timeout(self) -> None:
+        for child in self.children:
+            if hasattr(child, "disabled"):
+                child.disabled = True  # type: ignore
+        await self.latest_interaction.edit_original_response(view=self)
+    
+    @discord.ui.select(placeholder="Select a song...")
+    async def dropdown(self, interaction: Interaction, select: discord.ui.Select):
+        if not isinstance(interaction.channel, discord.TextChannel):
+            return
+        await interaction.response.defer(thinking=True)
+
+        id = select.values[0]
+        title = self.mapping[id]
+        
+        buf, has_pv = await zip_folder(self.drive, id, title)
+
+        content = f"PV not included due to Discord's 8MB limit." if has_pv else ""
+        await interaction.followup.send(content=content, file=discord.File(fp=buf, filename=f"{title}.zip"))
+        
 
 class DriveCog(commands.GroupCog, name="Drive", group_name="unreleased", group_description="Unreleased charts"):
     minimum_download_role: Optional[int] = None
@@ -43,34 +98,22 @@ class DriveCog(commands.GroupCog, name="Drive", group_name="unreleased", group_d
             title="Unreleased Songs",
             description="\n".join([x["title"] for x in folders])
         )
-        await interaction.response.send_message(embed=embed)
+        view = DriveSelectionView(interaction, self.drive, [(x["title"], x["id"]) for x in folders])
+        await interaction.response.send_message(embed=embed, view=view)
     
     @app_commands.command(description="Download unreleased charts")
     async def download(self, interaction: Interaction, title: str):
         await interaction.response.defer(thinking=True)
         folders = self.drive.ListFile({
-            "q": f"'{self.unreleased_folder_id}' in parents and mimeType='application/vnd.google-apps.folder'"
+            "q": f"'{self.unreleased_folder_id}' in parents and mimeType='application/vnd.google-apps.folder' and title contains '{title}'"
         }).GetList()
 
-        folder = next((x for x in folders if x["title"] == title), None)
-        if folder is None:
-            await interaction.response.send_message("Chart not found")
-            return
-        
-        files = self.drive.ListFile({
-            "q": f"'{folder['id']}' in parents"
-        }).GetList()
+        folder = folders[0]
+        id = folder["id"]
+        title = folder["title"]
 
-        has_pv = False
-        buf = io.BytesIO()
-        with zipfile.ZipFile(buf, "w") as z:
-            for file in files:
-                if "pv" in file["title"]:
-                    has_pv = True
-                    continue
-                z.writestr(f"{title}/{file['title']}", file.GetContentIOBuffer().read())
-        
-        buf.seek(0)
+        buf, has_pv = await zip_folder(self.drive, id, title)
+
         content = f"PV not included due to Discord's 8MB limit." if has_pv else ""
         await interaction.followup.send(content=content, file=discord.File(fp=buf, filename=f"{title}.zip"))
 
