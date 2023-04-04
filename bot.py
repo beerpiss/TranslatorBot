@@ -1,17 +1,27 @@
-import re
+from pathlib import Path
+
+from dotenv import dotenv_values
+
+BOT_DIR = Path(__file__).absolute().parent
+cfg = dotenv_values(BOT_DIR / ".env")
+
+import asyncio
+import logging
+import logging.handlers
+import sys
 from typing import Optional
 
 import discord
-import langcodes
-from discord import app_commands, Message, Interaction
+from discord.ext import commands
 from discord.ext.commands import Bot
 from dotenv import dotenv_values
 from googletrans import Translator
-from googletrans.models import Translated
-from lingua import Language, LanguageDetectorBuilder
 
 
 class TranslatorBot(Bot):
+    cfg: dict[str, str | None]
+    translator: Translator
+
     def __init__(self, *args, testing_guild_id: Optional[int] = None, **kwargs):
         super().__init__(*args, **kwargs)
         self.testing_guild_id = testing_guild_id
@@ -23,106 +33,56 @@ class TranslatorBot(Bot):
             await self.tree.sync(guild=guild)
 
 
-DISCORD_SYNTAX_REGEX = re.compile(r"<(a?:.+?:(\d+))>")
-cfg = dotenv_values(".env")
+async def startup():
+    logger = logging.getLogger("discord")
+    logger.setLevel(logging.DEBUG)
 
-intents = discord.Intents.default()
-intents.message_content = True
-
-client = TranslatorBot(
-    command_prefix=">",
-    intents=intents,
-    testing_guild_id=int(cfg["GUILD_ID"]) if cfg["GUILD_ID"] else None,
-)
-languages = [Language.ENGLISH, Language.CHINESE, Language.VIETNAMESE, Language.MALAY, Language.TAGALOG, Language.FRENCH, Language.SPANISH, Language.INDONESIAN, Language.JAPANESE]
-detector = LanguageDetectorBuilder.from_languages(*languages).build()
-translator = Translator()
-
-def create_translate_embed(
-    translated: Translated,
-    message: Optional[Message] = None,
-    interaction: Optional[Interaction] = None,
-) -> discord.Embed:
-    if message is None and interaction is None:
-        raise ValueError("Either message or interaction must be specified")
-
-    name = None
-    url = None
-    icon_url = None
-    color = None
-
-    if message is not None:
-        name = message.author.display_name
-        url = message.jump_url
-        icon_url = message.author.display_avatar.url
-        color = message.author.roles[-1].color
-    elif interaction is not None:
-        name = interaction.user.display_name
-        url = None
-        icon_url = interaction.user.display_avatar.url
-        color = interaction.user.roles[-1].color
-
-    return (
-        discord.Embed(
-            description=translated.text,
-            color=color,
-        )
-        .set_footer(text=f"Translated from {langcodes.Language.get(translated.src).language_name()}")
-        .set_author(
-            name=name,
-            url=url,
-            icon_url=icon_url,
-        )
+    handler = logging.handlers.RotatingFileHandler(
+        filename="discord.log",
+        encoding="utf-8",
+        maxBytes=32 * 1024 * 1024,  # 32 MiB
+        backupCount=5,  # Rotate through 5 files
     )
-
-
-@client.event
-async def on_message(message: Message):
-    if message.author == client.user:
-        return
-
-    if (
-        cfg["AUTO_TRANSLATE_CATEGORY"]
-        and hasattr(message.channel, "category_id")
-        and str(message.channel.category_id) not in cfg["AUTO_TRANSLATE_CATEGORY"]
-    ):
-        return
-
-    emotes = DISCORD_SYNTAX_REGEX.findall(message.content)
-    sanitized_message = DISCORD_SYNTAX_REGEX.sub(r"<\2>", message.content)
-
-    language = detector.detect_language_of(sanitized_message)
-    if language is None:
-        return
-    confidence = detector.compute_language_confidence(sanitized_message, language)
-    if language != Language.ENGLISH and confidence >= 0.7:
-        translated = translator.translate(sanitized_message, dest="en")
-        if translated.text.lower() != sanitized_message.lower() and translated.src != translated.dest:
-            for emote in emotes:
-                translated.text = translated.text.replace(f"<{emote[1]}>", f"<{emote[0]}>")
-            print(translated.text)
-            await message.reply(
-                embed=create_translate_embed(translated, message=message),
-                mention_author=False,
-            )
-
-
-@client.tree.command()
-@app_commands.rename(
-    from_lang="from",
-)
-@app_commands.describe(
-    text="The text to translate",
-    to="The language to translate to",
-    from_lang="The language to translate from (defaults to auto-detect)",
-)
-async def translate(
-    interaction: Interaction, text: str, to: str, from_lang: str = "auto"
-):
-    translated = translator.translate(text, dest=to, src=from_lang)
-    await interaction.response.send_message(
-        embed=create_translate_embed(translated, interaction=interaction)
+    dt_fmt = "%Y-%m-%d %H:%M:%S"
+    formatter = logging.Formatter(
+        "[{asctime}] [{levelname:<8}] {name}: {message}", dt_fmt, style="{"
     )
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
+
+    (intents := discord.Intents.default()).message_content = True
+
+    guild_id = cfg.get("GUILD_ID")
+    bot = TranslatorBot(command_prefix=commands.when_mentioned_or(">"), intents=intents, testing_guild_id=int(guild_id) if guild_id else None)
+    bot.cfg = cfg
+    bot.translator = Translator()
+
+    for file in (BOT_DIR / "cogs").glob("*.py"):
+        if file.stem in ["__init__"]:
+            continue
+        try:
+            await bot.load_extension(f"cogs.{file.stem}")
+            print(f"Loaded cogs.{file.stem}")
+        except Exception as e:
+            print(f"Failed to load extension cogs.{file.stem}")
+            print(f"{type(e).__name__}: {e}")
+
+    if (token := cfg.get("TOKEN")) is None:
+        sys.exit(
+            "[ERROR] Token not found, make sure 'TOKEN' is set in the '.env' file. Exiting."
+        )
+
+    try:
+        await bot.start(token)
+    except discord.LoginFailure:
+        sys.exit(
+            "[ERROR] Token not found, make sure 'TOKEN' is set in the '.env' file. Exiting."
+        )
+    except discord.PrivilegedIntentsRequired:
+        sys.exit(
+            "[ERROR] Message Content Intent not enabled, go to 'https://discord.com/developers/applications' and enable the Message Content Intent. Exiting."
+        )
 
 
-client.run(cfg["TOKEN"])
+if __name__ == "__main__":
+    asyncio.run(startup())
