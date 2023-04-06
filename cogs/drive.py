@@ -23,7 +23,7 @@ async def zip_folder(drive: GoogleDrive, id: str, parent_folder: str, guild: Opt
     estimated_file_size = (30 + 16 + 46 + 52) * len(files) + 22
     for file in files:
         arcname = f"{parent_folder}/{file['title']}"
-        estimated_file_size += 2 * len(arcname.encode("utf-8")) + file["size"]
+        estimated_file_size += 2 * len(arcname.encode("utf-8")) + file["fileSize"]
     exclude_pv = estimated_file_size > filesize_limit
     
     excluded_pv = False
