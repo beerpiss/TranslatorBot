@@ -13,22 +13,30 @@ from pydrive2.drive import GoogleDrive  # type: ignore
 from bot import TranslatorBot
 
 
-async def zip_folder(drive: GoogleDrive, id: str, parent_folder: str) -> tuple[io.BytesIO, bool]:
+async def zip_folder(drive: GoogleDrive, id: str, parent_folder: str, guild: Optional[discord.Guild] = None) -> tuple[io.BytesIO, bool]:
+    filesize_limit = guild.filesize_limit if guild is not None else 25 * 1000 * 1000
+
     files = drive.ListFile({
         "q": f"'{id}' in parents"
     }).GetList()
 
-    has_pv: bool = False
+    estimated_file_size = (30 + 16 + 46 + 52) * len(files) + 22
+    for file in files:
+        arcname = f"{parent_folder}/{file['title']}"
+        estimated_file_size += 2 * len(arcname.encode("utf-8")) + file["size"]
+    exclude_pv = estimated_file_size > filesize_limit
+    
+    excluded_pv = False
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w") as z:
         for file in files:
-            if "pv" in file["title"]:
-                has_pv = True
+            if "pv" in file["title"] and exclude_pv:
+                excluded_pv = True
                 continue
             z.writestr(f"{parent_folder}/{file['title']}", file.GetContentIOBuffer().read())
     
     buf.seek(0)
-    return buf, has_pv
+    return buf, excluded_pv
 
 
 class DriveSelectionView(discord.ui.View):
@@ -105,9 +113,9 @@ class DriveCog(commands.GroupCog, name="Drive", group_name="unreleased", group_d
         id = folder["id"]
         title = folder["title"]
 
-        buf, has_pv = await zip_folder(self.drive, id, title)
+        buf, excluded_pv = await zip_folder(self.drive, id, title, interaction.guild)
 
-        content = f"PV not included due to Discord's 8MB limit." if has_pv else ""
+        content = f"PV not included due to Discord's 8MB limit." if excluded_pv else ""
         await interaction.followup.send(content=content, file=discord.File(fp=buf, filename=f"{title}.zip"))
 
         
